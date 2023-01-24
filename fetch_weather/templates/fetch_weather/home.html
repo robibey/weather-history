@@ -1,4 +1,67 @@
 {% extends "fetch_weather/base.html" %}
 {% block content %}
-    <h1>Fetch Weather Home!</h1>
+<form method="POST">
+    {% csrf_token %}
+    <div class="row g-3 justify-content-center">
+        <div class="col-auto">
+            <div class="form-floating mb-3">
+                <input type="text" class="form-control" name="location" size="60">
+                <label for="location">Location</label>
+            </div>
+        </div>
+        <div class="col-sm-2">
+            <div class="form-floating">
+                <select class="form-select" name="units">
+                <option selected>Metric</option>
+                <option value="Imperial">Imperial</option>
+                </select>
+                <label for="units">Units</label>
+            </div>
+        </div>
+        <div class="col-auto">
+            <div class="form-floating">
+                <select class="form-select" name="timezone">
+                <option selected>America/Anchorage</option>
+                <option value="America/Los_Angeles">America/Los_Angeles</option>
+                <option value="America/Denver">America/Denver</option>
+                <option value="America/Chicago">America/Chicago</option>
+                <option value="America/New_York">America/New_York</option>
+                <option value="America/Sao_Paulo">America/Sao_Paulo</option>
+                <option value="GMT+0">GMT+0</option>
+                <option value="Europe/London">Europe/London</option>
+                <option value="Europe/Berlin">Europe/Berlin</option>
+                <option value="Europe/Moscow">Europe/Moscow</option>
+                <option value="Africa/Cairo">Africa/Cairo</option>
+                <option value="Asia/Bangkok">Asia/Bangkok</option>
+                <option value="Asia/Singapore">Asia/Singapore</option>
+                <option value="Asia/Tokyo">Asia/Tokyo</option>
+                <option value="Australia/Sydney">Australia/Sydney</option>
+                <option value="Pacific/Auckland">Pacific/Auckland</option>
+                </select>
+                <label for="timezone">Your Local Timezone</label>
+            </div>
+        </div>
+        <div class="col-auto d-flex align-items-center">
+            <button class="btn btn-primary" type="submit">Add location</button>
+        </div>
+    </div>
+</form>
+{% if location_current_weather_data %}
+<div class="card" style="width: 16rem;">
+    <div class="card-body">
+      <h5 class="card-title">{{ location_current_weather_data.city }}</h5>
+      <p class="card-text">{{ location_current_weather_data.temperature }}</p>
+      <button class="btn btn-primary" data-toggle="collapse" data-target="#collapseOne" aria-expanded="true" aria-controls="collapseOne">
+        More Info
+      </button>
+      <div id="collapseOne" class="collapse" aria-labelledby="headingOne" data-parent="#accordion">
+        <div class="card-body">
+          {{ location_current_weather_data.units }}
+        </div>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+    <!-- <input type="time"> -->
 {% endblock content %}
