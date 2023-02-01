@@ -1,0 +1,99 @@
+{% extends "fetch_weather/base.html" %}
+{% block content %}
+<div class="container" style="max-width: 90%;">
+    <div class="row justify-content-center mb-5">
+        <div class="col-auto">
+            <form method="POST">
+                {% csrf_token %}
+            <div class="form-floating mb-3">
+                <input type="text" class="form-control" name="location" size="60">
+                <label for="location">Location</label>
+            </div>
+            <div class="col-auto d-flex align-items-center">
+                <button class="btn btn-primary" type="submit">Add location</button>
+            </div>
+            </form>
+            <div class="col-auto">
+                <div class="form-floating">
+                    <select class="form-select" hx-get="units" hx-target="#test" name="units">
+                    <option selected value="metric">Metric (°C, km)</option>
+                    <option value="us">US (°F, miles)</option>
+                    <option value="uk">UK (°C, miles)</option>
+                    </select>
+                    <label for="units">Units (Currently Using: {% if user.userpreferences_set.first.units == 'us' %}{{ units.us }})
+                        {% elif user.userpreferences_set.first.units == 'metric' %}{{ units.metric }})
+                        {% elif user.userpreferences_set.first.units == 'uk' %}{{ units.uk }})</label>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="container" style="max-width: 90%;" id="test">
+    <div class="row">
+    {% for key, val in saved_locs.items %}
+    {{icons}}
+    <div class="col-sm-3">
+    <div class="card mb-4">
+        <div class="row no-gutters" style="margin-left: 5px;">
+            <div class="col-md-4" style="height: max-content;">
+                <img src=https://raw.githubusercontent.com/visualcrossing/WeatherIcons/main/SVG/1st%20Set%20-%20Color/{{ val3.icon }}.svg class="card-img" style="margin-bottom: 10px; aspect-ratio: 1;">
+            </div>
+            <div class="col-md-8">
+                <h5 class="card-title" style="font-weight: bold;">{{ key }}</h5>
+                <div class="row no-gutters">
+                    <div class="col-auto">
+                        <h5 class="card-subtitle mb-2 text-muted">{{ val.temp }}{{ selected_unit }}</h5>
+                    </div>
+                    <div class="col-auto">
+                    <h5 class="card-subtitle mb-2 text-muted">{{ val.conditions }}</h5>
+                    </div>
+                    <div class="row" style="margin-bottom: 10px;">
+                        <div class="col-auto">
+                            {{ val.description }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row d-flex mt-auto">
+            <div class="col d-flex justify-content-end" style="width: 50%;">
+                <button class="btn btn-primary" type="button" data-toggle="collapse" data-target=#detailed_{{ key }} aria-expanded="false">
+                More Details
+                </button>
+            </div>
+            <div class="col d-flex justify-content-start" style="width: 50%;">
+                <button class="btn btn-primary" type="button" data-toggle="collapse" data-target=#24hr_{{ key }}aria-expanded="false">
+                24-hr Forecast
+                </button>
+            </div>
+        </div>
+        <div class="row no-gutters pt-2">
+            <div class="collapse" id=detailed_{{ key }}>
+                <div class="card-body">
+                    <table class="table table-sm table-hover">
+                        {% for key2, val2 in val.items %}
+                        <tr>
+                            <th scope="row">{{ key2 }}</th>
+                            <td class="text-end">{{ val2 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="row no-gutters">
+            <div class="collapse" id=24hr_{{ key }}>
+                <div class="col">
+                    <div class="card card-body">
+                    24 hr outlook here
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+    {% endfor %}
+</div>
+</div>
+
+{% endblock content %}

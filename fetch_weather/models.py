@@ -1,17 +1,30 @@
 from django.db import models
-from django.utils import timezone
 from django.contrib.auth.models import User
-from django.contrib.auth.decorators import login_required
+from django.db.models import Max
 
-units = (('Celsius', 'Celsius'), ('Fahrenheit', 'Fahrenheit'))
-
-
-#@login_required
 class Location(models.Model):
-    units = models.CharField(max_length=10, choices=units, default='Celsius')
-    locs = models.TextField(max_length=500)
-    datetime = models.DateTimeField(default=timezone.now)
+    loc = models.CharField(max_length=60)
+    datetime = models.TimeField()
+    datetimeEpoch = models.IntegerField()
+    temp = models.FloatField()
+    feelslike = models.FloatField()
+    humidity = models.FloatField()
+    precip = models.FloatField()
+    snow = models.FloatField()
+    preciptype = models.CharField(max_length=50, null=True, blank=True)
+    pressure = models.FloatField()
+    cloudcover = models.FloatField()
+    uvindex = models.FloatField()
+    conditions = models.CharField(max_length=50)
+    icon = models.CharField(max_length=30)
+    sunrise = models.TimeField()
+    sunset = models.TimeField()
+    moonphase = models.FloatField()
+    daily_description = models.CharField(max_length=150)
+    last_modified = models.TimeField(auto_now=True)
+    order = models.SmallIntegerField()
     author = models.ForeignKey(User, on_delete=models.CASCADE)
 
-    def __str__(self):
-        return self.locs
+    class Meta:
+        unique_together = ['loc', 'author']
+        ordering = ['order']

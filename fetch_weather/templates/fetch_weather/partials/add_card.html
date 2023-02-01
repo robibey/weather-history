@@ -1,0 +1,99 @@
+        {% for key, val in saved_locs.items %}
+        <div class="col-sm-3">
+            <input type="hidden" name="card-order" value="{{ key }}"/>
+            <div class="card mb-4">
+                <div class="row no-gutters" style="margin-left: 5px;">
+                    <div class="col-md-4" style="height: max-content;">
+                        <img src=https://raw.githubusercontent.com/visualcrossing/WeatherIcons/main/SVG/1st%20Set%20-%20Color/{{ val.icon }}.svg class="card-img" style="margin-bottom: 10px; aspect-ratio: 1;">
+                    </div>
+                    <div class="col-md-8">
+                        <button class="btn btn-primary mb-4 remove" id="{{key}}">Remove</button> 
+                        <h5 class="card-title" style="font-weight: bold;">{{ key }}</h5>
+                        <div class="row no-gutters">
+                            <div class="col-auto">
+                                <h5 class="card-subtitle mb-2 text-muted">{{ val.temp }}{{ front_units.temp_unit }}</h5>
+                            </div>
+                            <div class="col-auto">
+                                <h5 class="card-subtitle mb-2 text-muted">{{ val.conditions }}</h5>
+                            </div>
+                            <div class="row" style="margin-bottom: 10px;">
+                                <div class="col-auto">
+                                    {{ val.daily_description }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row d-flex mt-auto">
+                    <div class="col d-flex justify-content-end" style="width: 50%;">
+                        <button class="btn btn-primary" type="button" data-toggle="collapse" data-target=#detailed_{{ key }} aria-expanded="false">
+                            More Details
+                        </button>
+                    </div>
+                    <div class="col d-flex justify-content-start" style="width: 50%;">
+                        <button class="btn btn-primary" type="button" data-toggle="collapse" data-target=#24hr_{{ key }} aria-expanded="false">
+                            24-hr Forecast
+                        </button>
+                    </div>
+                </div>
+                <div class="row no-gutters pt-2">
+                    <div class="collapse" id=detailed_{{ key }}>
+                        <div class="card-body">
+                            <table class="table table-sm table-hover">
+                                <tr id="timezone">
+                                    <th scope="row">Data From</th>
+                                    <td class="text-end">{{val.datetime}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Feels Like</th>
+                                    <td class="text-end">{{val.feelslike}}{{front_units.temp_unit}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Humidity</th>
+                                    <td class="text-end">{{val.humidity}}%</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Precipitation Amount</th>
+                                    <td class="text-end">{{val.precip}} {{front_units.precip_unit}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Snow</th>
+                                    <td class="text-end">{{val.snow}} {{front_units.snow_unit}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Pressure</th>
+                                    <td class="text-end">{{val.pressure}} {{front_units.pressure_unit}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Cloud Cover</th>
+                                    <td class="text-end">{{val.cloudcover}}%</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">UV Index</th>
+                                    <td class="text-end">{{val.uvindex}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Sunrise</th>
+                                    <td class="text-end">{{val.sunrise}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Sunset</th>
+                                    <td class="text-end">{{val.sunset}}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="row no-gutters">
+                    <div class="collapse" id=24hr_{{ key }}>
+                        <div class="col">
+                            <div class="card card-body">
+                                24 hr outlook here
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>

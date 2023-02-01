@@ -1,67 +1,174 @@
 {% extends "fetch_weather/base.html" %}
 {% block content %}
-<form method="POST">
-    {% csrf_token %}
-    <div class="row g-3 justify-content-center">
-        <div class="col-auto">
-            <div class="form-floating mb-3">
-                <input type="text" class="form-control" name="location" size="60">
-                <label for="location">Location</label>
-            </div>
-        </div>
-        <div class="col-sm-2">
-            <div class="form-floating">
-                <select class="form-select" name="units">
-                <option selected>Metric</option>
-                <option value="Imperial">Imperial</option>
-                </select>
-                <label for="units">Units</label>
-            </div>
-        </div>
-        <div class="col-auto">
-            <div class="form-floating">
-                <select class="form-select" name="timezone">
-                <option selected>America/Anchorage</option>
-                <option value="America/Los_Angeles">America/Los_Angeles</option>
-                <option value="America/Denver">America/Denver</option>
-                <option value="America/Chicago">America/Chicago</option>
-                <option value="America/New_York">America/New_York</option>
-                <option value="America/Sao_Paulo">America/Sao_Paulo</option>
-                <option value="GMT+0">GMT+0</option>
-                <option value="Europe/London">Europe/London</option>
-                <option value="Europe/Berlin">Europe/Berlin</option>
-                <option value="Europe/Moscow">Europe/Moscow</option>
-                <option value="Africa/Cairo">Africa/Cairo</option>
-                <option value="Asia/Bangkok">Asia/Bangkok</option>
-                <option value="Asia/Singapore">Asia/Singapore</option>
-                <option value="Asia/Tokyo">Asia/Tokyo</option>
-                <option value="Australia/Sydney">Australia/Sydney</option>
-                <option value="Pacific/Auckland">Pacific/Auckland</option>
-                </select>
-                <label for="timezone">Your Local Timezone</label>
-            </div>
-        </div>
-        <div class="col-auto d-flex align-items-center">
-            <button class="btn btn-primary" type="submit">Add location</button>
-        </div>
-    </div>
-</form>
-{% if location_current_weather_data %}
-<div class="card" style="width: 16rem;">
-    <div class="card-body">
-      <h5 class="card-title">{{ location_current_weather_data.city }}</h5>
-      <p class="card-text">{{ location_current_weather_data.temperature }}</p>
-      <button class="btn btn-primary" data-toggle="collapse" data-target="#collapseOne" aria-expanded="true" aria-controls="collapseOne">
-        More Info
-      </button>
-      <div id="collapseOne" class="collapse" aria-labelledby="headingOne" data-parent="#accordion">
-        <div class="card-body">
-          {{ location_current_weather_data.units }}
-        </div>
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="liveToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="toast-header">
+        <strong class="me-auto">Bootstrap</strong>
+        <small>11 mins ago</small>
+        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+      <div class="toast-body">
+        Hello, world! This is a toast message.
       </div>
     </div>
   </div>
-{% endif %}
+<div class="container" style="max-width: 100%;">
+<div class="row g-3 justify-content-center">
+    <div class="col-sm-3">
+            <div class="form-floating mb-3">
+                <input type="text" class="form-control" id="location" name="location" size="60">
+                <label for="location">Location</label>
+            </div>
+            <div class="col-auto d-flex align-items-center">
+                <button class="btn btn-primary mb-4" hx-post="add_card/" hx-target="#card-temp" hx-include="#location">Add location</button>
+            </div>
+    </div>
+    <div class="col-sm-2">
+        <div class="form-floating" id="units">
+            {% if user.userpreferences_set.first.units == 'metric' %}
+            <select class="form-select"  hx-get="units" hx-target="#card-temp, #units" name="units" hx-trigger="change">
+                <option selected value="metric" style="font-weight: bold;">Metric (°C, km)</option>
+                <option value="us">US (°F, miles)</option>
+                <option value="uk">UK (°C, miles)</option>
+            </select>
+            {% elif user.userpreferences_set.first.units == 'us' %}
+            <select class="form-select" hx-get="units" hx-target="#card-temp, #units" name="units" hx-trigger="change">
+                <option selected value="us" style="font-weight: bold;">US (°F, miles)</option>
+                <option value="metric">Metric (°C, km)</option>
+                <option value="uk">UK (°C, miles)</option>
+            </select>
+            {% elif user.userpreferences_set.first.units == 'uk' %}
+            <select class="form-select" hx-get="units" hx-target="#card-temp, #units" name="units" hx-trigger="change">
+                <option selected value="uk" style="font-weight: bold;">UK (°C, miles)</option>
+                <option value="us">US (°F, miles)</option>
+                <option value="metric">Metric (°C, km)</option>
+            </select>
+            {% endif %}
+            <label for="units">Units</label>
+        </div>
+    </div>
+    <div class="col-sm-2">
+        <div class="form-floating">
+            <select class="form-select" id="timezone" name="timezone" hx-get="timezone" hx-target="#timezone" hx-trigger="load, change">
+                <option selected value="{{ user.userpreferences_set.first.timezone }}">{{ user.userpreferences_set.first.timezone }}</option>
+                {% for t1, t2 in all_timezones.items %}
+                <option value="{{t1}}">{{ t2 }}</option>
+                {% endfor %}
+            </select>
+            <label for="timezone">Your Local Timezone</label>
+        </div>
+    </div>
+</div>
+<div class="row sortable" id="card-temp" hx-swap-oob="innerHTML" hx-trigger="end" hx-post="/sort/" hx-target="#card-temp" hx-include="#card-order, #card-temp">
+    {% for key, val in saved_locs.items %}
+        <div class="col-3" id="test">
+            <input type="hidden" id="card-order" name="card-order" value="{{ key }}"/>
+            <div class="card mb-4" id="card">
+                <svg xmlns="http://www.w3.org/2000/svg" id="handle" width="20" height="20" fill="currentColor" class="bi bi-arrows-move position-absolute top-0 start-0" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M7.646.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 1.707V5.5a.5.5 0 0 1-1 0V1.707L6.354 2.854a.5.5 0 1 1-.708-.708l2-2zM8 10a.5.5 0 0 1 .5.5v3.793l1.146-1.147a.5.5 0 0 1 .708.708l-2 2a.5.5 0 0 1-.708 0l-2-2a.5.5 0 0 1 .708-.708L7.5 14.293V10.5A.5.5 0 0 1 8 10zM.146 8.354a.5.5 0 0 1 0-.708l2-2a.5.5 0 1 1 .708.708L1.707 7.5H5.5a.5.5 0 0 1 0 1H1.707l1.147 1.146a.5.5 0 0 1-.708.708l-2-2zM10 8a.5.5 0 0 1 .5-.5h3.793l-1.147-1.146a.5.5 0 0 1 .708-.708l2 2a.5.5 0 0 1 0 .708l-2 2a.5.5 0 0 1-.708-.708L14.293 8.5H10.5A.5.5 0 0 1 10 8z"/>
+                  </svg>
+                <div class="row no-gutters" style="margin-left: 5px;">
+                    <div class="col-md-4" style="height: max-content;">
+                        <img src=https://raw.githubusercontent.com/visualcrossing/WeatherIcons/main/SVG/1st%20Set%20-%20Color/{{ val.icon }}.svg class="card-img" style="margin-bottom: 10px; aspect-ratio: 1;">
+                    </div>
+                    <div class="col-md-8">
+                        <button type="button" id="remove-btn" class="btn-close remove position-absolute top-0 end-0" hx-params="{{key}}" hx-post="remove_card/" hx-trigger="click consume delay:2s"></button> 
+                        <div class="col-sm" style="max-width: 90%;">
+                        <h5 class="card-title" style="font-weight: bold;">{{ key }}</h5></div>
+                        <div class="row no-gutters">
+                            <div class="col-auto">
+                                <h5 class="card-subtitle mb-2 text-muted">{{ val.temp }}{{ front_units.temp_unit }}</h5>
+                            </div>
+                            <div class="col-auto">
+                                <h5 class="card-subtitle mb-2 text-muted">{{ val.conditions }}</h5>
+                            </div>
+                            <div class="row" style="margin-bottom: 10px;">
+                                <div class="col-auto">
+                                    {{ val.daily_description }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row d-flex mt-auto">
+                    <div class="col d-flex justify-content-end" style="width: 50%;">
+                        <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#detailed_{{val.pretty_loc}}" aria-expanded="false">
+                            More Details
+                        </button>
+                    </div>
+                    <div class="col d-flex justify-content-start" style="width: 50%;">
+                        <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#hr_{{val.pretty_loc}}" aria-expanded="false">
+                            24-hr Forecast
+                        </button>
+                    </div>
+                </div>
+                <div class="row no-gutters pt-2">
+                    <div class="collapse" id="detailed_{{val.pretty_loc}}">
+                        <div class="card-body">
+                            <table class="table table-sm table-hover">
+                                <tr id="timezone">
+                                    <th scope="row">Data From</th>
+                                    <td class="text-end">{{val.datetime}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Feels Like</th>
+                                    <td class="text-end">{{val.feelslike}}{{front_units.temp_unit}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Humidity</th>
+                                    <td class="text-end">{{val.humidity}}%</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Precipitation Amount</th>
+                                    <td class="text-end">{{val.precip}} {{front_units.precip_unit}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Snow</th>
+                                    <td class="text-end">{{val.snow}} {{front_units.snow_unit}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Pressure</th>
+                                    <td class="text-end">{{val.pressure}} {{front_units.pressure_unit}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Cloud Cover</th>
+                                    <td class="text-end">{{val.cloudcover}}%</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">UV Index</th>
+                                    <td class="text-end">{{val.uvindex}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Sunrise</th>
+                                    <td class="text-end">{{val.sunrise}}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Sunset</th>
+                                    <td class="text-end">{{val.sunset}}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="row no-gutters">
+                    <div class="collapse" id="hr_{{val.pretty_loc}}">
+                        <div class="col">
+                            <div class="card card-body">
+                                24 hr outlook here
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <small class="text-muted">Last updated {{ val.last_modified }}</small>
+                </div>
+            </div>
+            
+        </div>
+        {% endfor %}
+</div>
+</div>
 
-    <!-- <input type="time"> -->
-{% endblock content %}
+
+<!-- <input type="time"> -->
+{% endblock %}

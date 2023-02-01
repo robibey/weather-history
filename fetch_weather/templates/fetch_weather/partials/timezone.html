@@ -1,0 +1,4 @@
+<option selected value="{{ user.userpreferences_set.first.timezone }}">{{ user.userpreferences_set.first.timezone }}</option>
+                {% for t1, t2 in all_timezones.items %}
+                <option>{{ t2 }}</option>
+                {% endfor %}
