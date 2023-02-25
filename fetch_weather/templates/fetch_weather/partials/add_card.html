@@ -1,99 +1,132 @@
-        {% for key, val in saved_locs.items %}
-        <div class="col-sm-3">
-            <input type="hidden" name="card-order" value="{{ key }}"/>
-            <div class="card mb-4">
-                <div class="row no-gutters" style="margin-left: 5px;">
-                    <div class="col-md-4" style="height: max-content;">
-                        <img src=https://raw.githubusercontent.com/visualcrossing/WeatherIcons/main/SVG/1st%20Set%20-%20Color/{{ val.icon }}.svg class="card-img" style="margin-bottom: 10px; aspect-ratio: 1;">
+<!--
+<div class="toast-container position-fixed start-0 end-0 p-3" id="toast-box" hx-swap-oob="true">
+    <div id="liveToast" class="toast bg-success-subtle" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="toast-header">
+        <strong class="me-auto">Added Item!</strong>
+        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+      <div class="toast-body">
+        {{ new_card.loc }} has been added to your dashboard!
+      </div>
+    </div>
+  </div>
+-->
+<div class="col-12 col-md-6 col-xl-4 col-xxl-3" id="col_{{ new_card.loc }}">
+    <input type="hidden" id="card-order" name="card-order" value="{{ new_card.loc }}"/>
+    <div class="card mb-4" id="{{ new_card.loc }}">
+        <svg xmlns="http://www.w3.org/2000/svg" id="handle" width="20" height="20" fill="currentColor" class="bi bi-arrows-move position-absolute top-0 start-0" viewBox="0 0 16 16">
+            <path fill-rule="evenodd" d="M7.646.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 1.707V5.5a.5.5 0 0 1-1 0V1.707L6.354 2.854a.5.5 0 1 1-.708-.708l2-2zM8 10a.5.5 0 0 1 .5.5v3.793l1.146-1.147a.5.5 0 0 1 .708.708l-2 2a.5.5 0 0 1-.708 0l-2-2a.5.5 0 0 1 .708-.708L7.5 14.293V10.5A.5.5 0 0 1 8 10zM.146 8.354a.5.5 0 0 1 0-.708l2-2a.5.5 0 1 1 .708.708L1.707 7.5H5.5a.5.5 0 0 1 0 1H1.707l1.147 1.146a.5.5 0 0 1-.708.708l-2-2zM10 8a.5.5 0 0 1 .5-.5h3.793l-1.147-1.146a.5.5 0 0 1 .708-.708l2 2a.5.5 0 0 1 0 .708l-2 2a.5.5 0 0 1-.708-.708L14.293 8.5H10.5A.5.5 0 0 1 10 8z"/>
+          </svg>
+        <div class="row justify-content-center">
+            <div class="col-6 d-flex justify-content-center col-xxl-4 pt-2">
+                <img src=https://raw.githubusercontent.com/visualcrossing/WeatherIcons/main/SVG/1st%20Set%20-%20Color/{{ new_card.icon }}.svg class="card-img mx-auto" id="icon_{{ new_card.pretty_loc }}" style="margin-bottom: 5px; aspect-ratio: 1;"/>
+            </div>
+            <div class="col-xxl-8">
+                <button type="button" id="remove-btn" data-bs-toggle="tooltip" data-bs-title="Remove" class="btn-close remove position-absolute top-0 end-0" hx-params="{{new_card.loc}}" hx-post="remove_card/" hx-swap="none" hx-select-oob="#toast-box" hx-trigger="click consume delay:0.9s"></button> 
+                <div class="col-11">
+                <h5 class="card-title ms-2" style="font-weight: bold;">{{ new_card.loc }}</h5></div>
+                <div class="row">
+                    <div class="col-5 col-xxl-4">
+                        <h5 class="card-subtitle mb-2 text-muted ms-2" id="{{new_card.pretty_loc}}_fronttemp">{{ new_card.temp }}{{ front_units.temp_unit }}</h5>
                     </div>
-                    <div class="col-md-8">
-                        <button class="btn btn-primary mb-4 remove" id="{{key}}">Remove</button> 
-                        <h5 class="card-title" style="font-weight: bold;">{{ key }}</h5>
-                        <div class="row no-gutters">
-                            <div class="col-auto">
-                                <h5 class="card-subtitle mb-2 text-muted">{{ val.temp }}{{ front_units.temp_unit }}</h5>
-                            </div>
-                            <div class="col-auto">
-                                <h5 class="card-subtitle mb-2 text-muted">{{ val.conditions }}</h5>
-                            </div>
-                            <div class="row" style="margin-bottom: 10px;">
-                                <div class="col-auto">
-                                    {{ val.daily_description }}
-                                </div>
-                            </div>
-                        </div>
+                    <div class="col-7 col-xxl-8">
+                        <h5 class="card-subtitle mb-2 text-muted me-2" id="{{new_card.pretty_loc}}_conditions">{{ new_card.conditions }}</h5>
                     </div>
-                </div>
-                <div class="row d-flex mt-auto">
-                    <div class="col d-flex justify-content-end" style="width: 50%;">
-                        <button class="btn btn-primary" type="button" data-toggle="collapse" data-target=#detailed_{{ key }} aria-expanded="false">
-                            More Details
-                        </button>
-                    </div>
-                    <div class="col d-flex justify-content-start" style="width: 50%;">
-                        <button class="btn btn-primary" type="button" data-toggle="collapse" data-target=#24hr_{{ key }} aria-expanded="false">
-                            24-hr Forecast
-                        </button>
-                    </div>
-                </div>
-                <div class="row no-gutters pt-2">
-                    <div class="collapse" id=detailed_{{ key }}>
-                        <div class="card-body">
-                            <table class="table table-sm table-hover">
-                                <tr id="timezone">
-                                    <th scope="row">Data From</th>
-                                    <td class="text-end">{{val.datetime}}</td>
-                                </tr>
-                                <tr>
-                                    <th scope="row">Feels Like</th>
-                                    <td class="text-end">{{val.feelslike}}{{front_units.temp_unit}}</td>
-                                </tr>
-                                <tr>
-                                    <th scope="row">Humidity</th>
-                                    <td class="text-end">{{val.humidity}}%</td>
-                                </tr>
-                                <tr>
-                                    <th scope="row">Precipitation Amount</th>
-                                    <td class="text-end">{{val.precip}} {{front_units.precip_unit}}</td>
-                                </tr>
-                                <tr>
-                                    <th scope="row">Snow</th>
-                                    <td class="text-end">{{val.snow}} {{front_units.snow_unit}}</td>
-                                </tr>
-                                <tr>
-                                    <th scope="row">Pressure</th>
-                                    <td class="text-end">{{val.pressure}} {{front_units.pressure_unit}}</td>
-                                </tr>
-                                <tr>
-                                    <th scope="row">Cloud Cover</th>
-                                    <td class="text-end">{{val.cloudcover}}%</td>
-                                </tr>
-                                <tr>
-                                    <th scope="row">UV Index</th>
-                                    <td class="text-end">{{val.uvindex}}</td>
-                                </tr>
-                                <tr>
-                                    <th scope="row">Sunrise</th>
-                                    <td class="text-end">{{val.sunrise}}</td>
-                                </tr>
-                                <tr>
-                                    <th scope="row">Sunset</th>
-                                    <td class="text-end">{{val.sunset}}</td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-                <div class="row no-gutters">
-                    <div class="collapse" id=24hr_{{ key }}>
-                        <div class="col">
-                            <div class="card card-body">
-                                24 hr outlook here
-                            </div>
+                    <div class="row" style="margin-bottom: 10px;">
+                        <div class="col-12 ms-2 me-1" id="{{new_card.pretty_loc}}_description">
+                            {{ new_card.daily_description }}
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        {% endfor %}
+        <div class="row">
+            <div class="col d-flex justify-content-center">
+                <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#detailed_{{new_card.pretty_loc}}" aria-expanded="false">
+                    More Details
+                </button>
+            </div>
+            <div class="col d-flex justify-content-center me-1">
+                <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#hr_{{new_card.pretty_loc}}" aria-expanded="false">
+                    24-hr Forecast
+                </button>
+            </div>
+        </div>
+        <div class="row pt-2">
+            <div class="collapse" id="detailed_{{new_card.pretty_loc}}">
+                <div class="card-body">
+                    <table class="table table-sm table-hover" id="{{new_card.pretty_loc}}_table">
+                        <tr>
+                            <th scope="row">Data From</th>
+                            <td class="text-end" id="{{new_card.pretty_loc}}_datetime"><script>
+                                var new_date = new Date("{{ new_card.tz_display_dt }}")
+                                document.querySelector("#{{new_card.pretty_loc}}_datetime").textContent = new_date.toLocaleString(undefined, {dateStyle:"medium", timeStyle:"short"})
+                            </script></td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Feels Like</th>
+                            <td class="text-end">{{new_card.feelslike}}{{front_units.temp_unit}}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Humidity</th>
+                            <td class="text-end">{{new_card.humidity}}%</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Precipitation Amount</th>
+                            <td class="text-end">{{new_card.precip}} {{front_units.precip_unit}}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Snow</th>
+                            <td class="text-end">{{new_card.snow}} {{front_units.snow_unit}}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Pressure</th>
+                            <td class="text-end">{{new_card.pressure}} {{front_units.pressure_unit}}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Cloud Cover</th>
+                            <td class="text-end">{{new_card.cloudcover}}%</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">UV Index</th>
+                            <td class="text-end">{{new_card.uvindex}}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Sunrise</th>
+                            <td class="text-end" id="{{new_card.pretty_loc}}_sunrise"><script>
+                                var new_date = new Date("{{ new_card.sunrise }}")
+                                document.querySelector("#{{new_card.pretty_loc}}_sunrise").textContent = new_date.toLocaleTimeString(undefined, {timeStyle: "short"})
+                            </script></td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Sunset</th>
+                            <td class="text-end" id="{{new_card.pretty_loc}}_sunset"><script>
+                                var new_date = new Date("{{ new_card.sunset }}")
+                                document.querySelector("#{{new_card.pretty_loc}}_sunset").textContent = new_date.toLocaleTimeString(undefined, {timeStyle: "short"})
+                            </script></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="collapse" id="hr_{{new_card.pretty_loc}}">
+                <div class="col">
+                    <div class="card card-body">
+                        24 hr outlook here
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <small class="text-muted" id="{{new_card.pretty_loc}}_last_updated"><script>
+                var new_date = new Date("{{ new_card.tz_display_lm }}")
+                document.querySelector("#{{new_card.pretty_loc}}_last_updated").textContent = "Last updated " + new_date.toLocaleString(undefined, {dateStyle: "medium", timeStyle: "short"})
+            </script></small>
+            <svg xmlns="http://www.w3.org/2000/svg" id="update_btn" hx-post="update_card/" hx-swap="none" hx-params="{{ new_card.loc }}" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" data-bs-toggle="tooltip" data-bs-title="Update" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+              </svg>
+        </div>
     </div>
+</div>

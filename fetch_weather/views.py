@@ -12,145 +12,82 @@ import os
 from .models import Location
 from users.forms import UserPreferencesForm
 from users.models import UserPreferences
-from django.db.models import Q
+from django.db.models import Q, Count
 import datetime, time
 import re
+from django.utils import timezone
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env()
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 API_KEY = env('API_KEY')
 
+METRIC_UNITS = {'temp_unit': '°C', 'precip_unit': 'mm', 'snow_unit': 'cm',
+                'wind_unit': 'km/h', 'visibility_unit': 'km', 'pressure_unit': 'mb'}
+UK_UNITS = {'temp_unit': '°C', 'precip_unit': 'mm', 'snow_unit': 'cm',
+            'wind_unit': 'mph', 'visibility_unit': 'miles', 'pressure_unit': 'mb'}
+US_UNITS = {'temp_unit': '°F', 'precip_unit': 'in', 'snow_unit': 'in',
+            'wind_unit': 'mph', 'visibility_unit': 'miles', 'pressure_unit': 'mb'}
 
 def home(request):
     context = {}
     if request.user.is_authenticated:
-        try:
-            max_order_num = Location.objects.filter(author=request.user).last().order
-        except:
-            max_order_num = 1
-        if 'location' in request.POST:
-            location = request.POST.get('location')
-            if location == '':
-                messages.warning(request, 'Please input a location.')
-                return render(request, 'fetch_weather/home.html')
-            geolocator = Nominatim(user_agent='http')
-            location_validated = geolocator.geocode(location, addressdetails=True, language='en')
-            if location_validated is None:
-                messages.warning(request, f'{location} is not a valid location.')
-                return render(request, 'fetch_weather/home.html')
-
-            if 'city' in str(location_validated.raw['address']):
-                city = str(location_validated.raw['address']['city'])
-            elif 'town' in str(location_validated.raw['address']):
-                city = str(location_validated.raw['address']['town'])
-            elif 'village' in str(location_validated.raw['address']):
-                city = str(location_validated.raw['address']['village'])
-            elif 'county' in str(location_validated.raw['address']):
-                city = str(location_validated.raw['address']['county'])
-            elif 'province' in str(location_validated.raw['address']):
-                city = str(location_validated.raw['address']['province'])
-            else:
-                city = ''
-            state = str(
-                location_validated.raw['address']['state']) if 'state' in str(
-                location_validated.raw['address']) else ''
-            country = str(
-                location_validated.raw['address']['country']) if 'country' in str(
-                location_validated.raw['address']) else ''
-            if state == city:
-                frontend_location = ', '.join([city, country])
-            elif city == '':
-                frontend_location = ', '.join([state, country])
-            elif state == '':
-                frontend_location = ', '.join([city, country])
-            else:
-                frontend_location = ', '.join([city, state, country])
-
-
-            try:
-                exists = Location.objects.filter(loc=frontend_location, author=request.user).first()
-                time_from_request = datetime.datetime.fromtimestamp(exists.datetimeEpoch).timestamp()
-                now = datetime.datetime.now().timestamp()
-                if (now - time_from_request)/60 < 30:
-                    messages.warning(request, f'Please wait {round(30 - ((now - time_from_request)/60))} minutes before updating.')
-                    return render(request, 'fetch_weather/home.html')
-                if exists:
-                    messages.warning(request, f'{frontend_location} is already on your dashboard!')
-                    return render(request, 'fetch_weather/home.html')
-            except:
-                pass
-
-            url = (
-                f'https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{frontend_location}'
-                f'/next24hours?unitGroup=metric&timezone=America/New_York&elements=datetime%2CdatetimeEpoch%2Clatitude%2Clongitude%2C'
-                f'tempmax%2Ctempmin%2Ctemp%2Cfeelslikemax%2Cfeelslikemin%2Cfeelslike%2Chumidity%2Cprecip%2Cpreciptype%2C'
-                f'snow%2Cpressure%2Ccloudcover%2Cuvindex%2Csunrise%2Csunset%2Cmoonphase%2Cconditions%2Cdescription%2Cicon'
-                f'&iconSet=icons2&key={API_KEY}&contentType=json')
-
-            weather_data = requests.get(url).json()
-            cc = weather_data['currentConditions']
-            form_data = {'loc': frontend_location, 'datetime': cc['datetime'],
-            'datetimeEpoch': cc['datetimeEpoch'], 'temp': cc['temp'], 'feelslike': cc['feelslike'],
-            'humidity': cc['humidity'], 'precip': cc['precip'], 'snow': cc['snow'],
-            'preciptype': cc['preciptype'], 'pressure': cc['pressure'], 'cloudcover': cc['cloudcover'],
-            'uvindex': cc['uvindex'], 'conditions': cc['conditions'], 'icon': cc['icon'], 
-            'sunrise': cc['sunrise'], 'sunset': cc['sunset'], 'moonphase': cc['moonphase'], 
-            'daily_description': weather_data['description'], 'order': max_order_num, 'author': request.user}
-            form = LocationForm(form_data)
-            print(form.errors)
-            if form.is_valid():
-                form.save()
-                messages.success(request, f'{frontend_location} successfully saved!')
-                return HttpResponseClientRefresh()
-
-        user_prefs, created = UserPreferences.objects.get_or_create(author=request.user, defaults={'units': 'us', 'timezone': 'America/New_York', 'author': request.user})
+        UserPreferences.objects.filter(author=None, session=request.session.session_key).update(author=request.user)
+        UserPreferences.objects.filter(author=request.user).exclude(session=request.session.session_key).delete()
+        user_prefs, created = UserPreferences.objects.get_or_create(author=request.user,
+            defaults={'units': 'us','author': request.user, 'session': request.session.session_key})
         units = user_prefs.units
-        timezone = user_prefs.timezone
-        all_timezones = {'America/New_York': 'America/New_York', 'America/Los_Angeles': 'America/Los_Angeles'}
-        popped = all_timezones.pop(timezone)
+        Location.objects.filter(session=request.session.session_key, author=None).update(author=request.user)
+        duplicates = Location.objects.filter(author=request.user).values('loc').annotate(records=Count('loc')).filter(records__gt=1)
+        if duplicates:
+            Location.objects.filter(author=request.user, loc=duplicates[0]['loc']).exclude(session=request.session.session_key).delete()
         locations = list(Location.objects.filter(author=request.user).all().values())
-        
+
+        if units == 'metric':
+            front_units = METRIC_UNITS
+        elif units == 'uk':
+            front_units = UK_UNITS 
+        elif units == 'us':
+            front_units = US_UNITS
         cards = {}
+        for loc in locations:
+            if units == 'us':
+                loc['temp'] = round((float(loc['temp'])*1.8)+32, 1)
+                loc['feelslike'] = round((float(loc['feelslike'])*1.8)+32, 1)
+                loc['precip'] = round(float(loc['precip'])*25.4, 1)
+                loc['snow'] = round(float(loc['snow'])*2.54, 1)
+            cards[loc['loc']] = loc
+        if not cards:
+            context = {}
+        else:
+            context = {'saved_locs': cards, 'front_units': front_units}
+    else:
+        if not request.session.session_key:
+            request.session.create()
+
+        user_prefs, _ = UserPreferences.objects.get_or_create(session=request.session.session_key,
+            defaults={'units': 'us', 'author': None, 'session': request.session.session_key})
+        units = user_prefs.units
+        request.session['units'] = user_prefs.units
+        locations = list(Location.objects.filter(session=request.session.session_key).all().values())
         
         if units == 'metric':
-            front_units = {'temp_unit': '°C', 'precip_unit': 'mm', 'snow_unit': 'cm',
-                        'wind_unit': 'km/h', 'visibility_unit': 'km', 'pressure_unit': 'mb'}
-            for loc in locations:
-                cards[loc['loc']] = {'datetime': loc['datetime'],
-                'temp': loc['temp'], 'feelslike': loc['feelslike'],
-                'humidity': loc['humidity'], 'precip': loc['precip'], 'snow': loc['snow'],
-                'preciptype': loc['preciptype'], 'pressure': loc['pressure'], 'cloudcover': loc['cloudcover'],
-                'uvindex': loc['uvindex'], 'conditions': loc['conditions'], 'icon': loc['icon'], 
-                'sunrise': loc['sunrise'], 'sunset': loc['sunset'], 'moonphase': loc['moonphase'], 
-                'daily_description': loc['daily_description'], 'last_modified': loc['last_modified']}
+            front_units = METRIC_UNITS
         elif units == 'uk':
-            front_units = {'temp_unit': '°C', 'precip_unit': 'mm', 'snow_unit': 'cm',
-                        'wind_unit': 'mph', 'visibility_unit': 'miles', 'pressure_unit': 'mb'}
-            for loc in locations:
-                cards[loc['loc']] = {'datetime': loc['datetime'],
-                'temp': loc['temp'], 'feelslike': loc['feelslike'],
-                'humidity': loc['humidity'], 'precip': loc['precip'], 'snow': loc['snow'],
-                'preciptype': loc['preciptype'], 'pressure': loc['pressure'], 'cloudcover': loc['cloudcover'],
-                'uvindex': loc['uvindex'], 'conditions': loc['conditions'], 'icon': loc['icon'], 
-                'sunrise': loc['sunrise'], 'sunset': loc['sunset'], 'moonphase': loc['moonphase'], 
-                'daily_description': loc['daily_description'], 'last_modified': loc['last_modified']}
+            front_units = UK_UNITS
         elif units == 'us':
-            front_units = {'temp_unit': '°F', 'precip_unit': 'in', 'snow_unit': 'in',
-                        'wind_unit': 'mph', 'visibility_unit': 'miles', 'pressure_unit': 'mb'}
-            for loc in locations:
-                cards[loc['loc']] = {'datetime': loc['datetime'],
-                'temp': round((float(loc['temp'])*1.8)+32, 1), 'feelslike': round((float(loc['feelslike'])*1.8)+32, 1),
-                'humidity': loc['humidity'], 'precip': round(float(loc['precip'])*25.4, 1), 'snow': round(float(loc['snow'])*2.54, 1),
-                'preciptype': loc['preciptype'], 'pressure': loc['pressure'], 'cloudcover': loc['cloudcover'],
-                'uvindex': loc['uvindex'], 'conditions': loc['conditions'], 'icon': loc['icon'], 
-                'sunrise': loc['sunrise'], 'sunset': loc['sunset'], 'moonphase': loc['moonphase'], 
-                'daily_description': loc['daily_description'], 'last_modified': loc['last_modified'],
-                'pretty_loc': re.sub("[, ]", '_', loc['loc'])}
+            front_units = US_UNITS
+        cards = {}
+        for loc in locations:
+            if units == 'us':
+                loc['temp'] = round((float(loc['temp'])*1.8)+32, 1)
+                loc['feelslike'] = round((float(loc['feelslike'])*1.8)+32, 1)
+                loc['precip'] = round(float(loc['precip'])*25.4, 1)
+                loc['snow'] = round(float(loc['snow'])*2.54, 1)
+            cards[loc['loc']] = loc
 
-        context = {'saved_locs': cards, 'front_units': front_units, 'all_timezones': all_timezones, 'popped': popped}
-    # else:
-        # context = {}
+        context = {'saved_locs': cards, 'front_units': front_units}
 
     return render(request, 'fetch_weather/home.html', context)
 
@@ -158,64 +95,72 @@ def home(request):
 def select_units(request):
     request_unit = request.GET.get('units')
     if request.user.is_authenticated:
-        user_prefs, created = UserPreferences.objects.get_or_create(author=request.user,
-        defaults={'units': 'us', 'timezone': 'America/New_York', 'author': request.user})
-        timezone = user_prefs.timezone
-        all_timezones = {'America/New_York': 'America/New_York', 'America/Los_Angeles': 'America/Los_Angeles'}
-        popped = all_timezones.pop(timezone)
+        user_prefs, _ = UserPreferences.objects.get_or_create(author=request.user,
+            defaults={'units': 'us', 'author': request.user, 'session': request.session.session_key})
         unit_from_db = UserPreferences.objects.filter(author=request.user).first()
         valid_units = {'metric': 'Metric', 'us': 'US', 'uk': 'UK'}
+        if request_unit not in valid_units:
+            return HttpResponseClientRefresh()
         locations = list(Location.objects.filter(author=request.user).all().values())
+        
+        if request_unit in valid_units:
+            if request_unit == 'metric':
+                units = METRIC_UNITS
+                unit_from_db.units = 'metric'
+            elif request_unit == 'uk':
+                units = UK_UNITS
+                unit_from_db.units = 'uk'
+            elif request_unit == 'us':
+                units = US_UNITS
+                unit_from_db.units = 'us'
+            unit_from_db.save()
+            cards = {}
+            for loc in locations:
+                if request_unit == 'us':
+                    loc['temp'] = round((float(loc['temp'])*1.8)+32, 1)
+                    loc['feelslike'] = round((float(loc['feelslike'])*1.8)+32, 1)
+                    loc['precip'] = round(float(loc['precip'])*25.4, 1)
+                    loc['snow'] = round(float(loc['snow'])*2.54, 1)
+                cards[loc['loc']] = loc
+        else:
+            context = {}
+            units = {}
+        context = {'saved_locs': cards, 'units': units}
+
+    else:
+        user_prefs, _ = UserPreferences.objects.get_or_create(session=request.session.session_key,
+            defaults={'units': 'us', 'author': None,
+            'session': request.session.session_key})
+        unit_from_db = UserPreferences.objects.filter(session=request.session.session_key).first()
+        valid_units = {'metric': 'Metric', 'us': 'US', 'uk': 'UK'}
+        locations = list(Location.objects.filter(session=request.session.session_key).all().values())
         
         if request_unit in valid_units:
             cards = {}
             if request_unit == 'metric':
-                units = {'temp_unit': '°C', 'precip_unit': 'mm', 'snow_unit': 'cm',
-                        'wind_unit': 'km/h', 'visibility_unit': 'km', 'pressure_unit': 'mb'}
+                units = METRIC_UNITS
                 unit_from_db.units = 'metric'
-                unit_from_db.save()
-                for loc in locations:
-                    cards[loc['loc']] = {'datetime': loc['datetime'],
-                    'temp': loc['temp'], 'feelslike': loc['feelslike'],
-                    'humidity': loc['humidity'], 'precip': loc['precip'], 'snow': loc['snow'],
-                    'preciptype': loc['preciptype'], 'pressure': loc['pressure'], 'cloudcover': loc['cloudcover'],
-                    'uvindex': loc['uvindex'], 'conditions': loc['conditions'], 'icon': loc['icon'], 
-                    'sunrise': loc['sunrise'], 'sunset': loc['sunset'], 'moonphase': loc['moonphase'], 
-                    'daily_description': loc['daily_description']}
             elif request_unit == 'uk':
-                units = {'temp_unit': '°C', 'precip_unit': 'mm', 'snow_unit': 'cm',
-                            'wind_unit': 'mph', 'visibility_unit': 'miles', 'pressure_unit': 'mb'}
+                units = UK_UNITS
                 unit_from_db.units = 'uk'
-                unit_from_db.save()
-                for loc in locations:
-                    cards[loc['loc']] = {'datetime': loc['datetime'],
-                    'temp': loc['temp'], 'feelslike': loc['feelslike'],
-                    'humidity': loc['humidity'], 'precip': loc['precip'], 'snow': loc['snow'],
-                    'preciptype': loc['preciptype'], 'pressure': loc['pressure'], 'cloudcover': loc['cloudcover'],
-                    'uvindex': loc['uvindex'], 'conditions': loc['conditions'], 'icon': loc['icon'], 
-                    'sunrise': loc['sunrise'], 'sunset': loc['sunset'], 'moonphase': loc['moonphase'], 
-                    'daily_description': loc['daily_description']}
             elif request_unit == 'us':
-                units = {'temp_unit': '°F', 'precip_unit': 'in', 'snow_unit': 'in',
-                            'wind_unit': 'mph', 'visibility_unit': 'miles', 'pressure_unit': 'mb'}
+                units = US_UNITS
                 unit_from_db.units = 'us'
-                unit_from_db.save()
-                for loc in locations:
-                    cards[loc['loc']] = {'datetime': loc['datetime'],
-                    'temp': round((float(loc['temp'])*1.8)+32, 1), 'feelslike': round((float(loc['feelslike'])*1.8)+32, 1),
-                    'humidity': loc['humidity'], 'precip': round(float(loc['precip'])*25.4, 1), 'snow': round(float(loc['snow'])*2.54, 1),
-                    'preciptype': loc['preciptype'], 'pressure': loc['pressure'], 'cloudcover': loc['cloudcover'],
-                    'uvindex': loc['uvindex'], 'conditions': loc['conditions'], 'icon': loc['icon'], 
-                    'sunrise': loc['sunrise'], 'sunset': loc['sunset'], 'moonphase': loc['moonphase'], 
-                    'daily_description': loc['daily_description']}
+            unit_from_db.save()
+            for loc in locations:
+                if request_unit == 'us':
+                    loc['temp'] = round((float(loc['temp'])*1.8)+32, 1)
+                    loc['feelslike'] = round((float(loc['feelslike'])*1.8)+32, 1)
+                    loc['precip'] = round(float(loc['precip'])*25.4, 1)
+                    loc['snow'] = round(float(loc['snow'])*2.54, 1)
+                cards[loc['loc']] = loc
         else:
             context = {}
-            units = {}
-        context = {'saved_locs': cards, 'units': units, 'all_timezones': all_timezones, 'popped': popped}
-    if request.htmx:
-        return HttpResponseClientRefresh()
-        #return render(request, 'fetch_weather/partials/units.html', context)
-    return render(request, 'fetch_weather/home.html', context)
+        request.session['units'] = unit_from_db.units
+        context = {'saved_locs': cards, 'units': units}
+        
+    return render(request, 'fetch_weather/partials/units.html', context)
+
 
 def add_card(request):
     context = {}
@@ -223,225 +168,287 @@ def add_card(request):
         max_order_num = Location.objects.filter(author=request.user).last().order + 1
     except:
         max_order_num = 1
-    if request.htmx:
-        location = request.POST.get('location')
-        if location == '':
-            messages.warning(request, 'Please input a location.')
-            return HttpResponseClientRefresh()
-        geolocator = Nominatim(user_agent='http')
-        location_validated = geolocator.geocode(location, addressdetails=True, language='en')
-        if location_validated is None:
-            messages.warning(request, f'{location} is not a valid location.')
-            return HttpResponseClientRefresh()
+    
+    location = request.POST.get('location')
+    if location.isspace() or location == '':
+        response = HttpResponse(status=204)
+        response['HX-Trigger'] = json.dumps({'showMessage': [{"message": 'Please input a location.',
+            "color": "bg-danger-subtle", "title": "Error"}]})
+        return response
+    geolocator = Nominatim(user_agent='http')
+    location_validated = geolocator.geocode(location, addressdetails=True, language='en')
+    if not location_validated:
+        response = HttpResponse(status=204)
+        response['HX-Trigger'] = json.dumps({'showMessage': [{"message": 'Please input a valid location.',
+            "color": "bg-danger-subtle", "title": "Error"}]})
+        return response
 
-        if 'city' in str(location_validated.raw['address']):
-            city = str(location_validated.raw['address']['city'])
-        elif 'town' in str(location_validated.raw['address']):
-            city = str(location_validated.raw['address']['town'])
-        elif 'village' in str(location_validated.raw['address']):
-            city = str(location_validated.raw['address']['village'])
-        elif 'county' in str(location_validated.raw['address']):
-            city = str(location_validated.raw['address']['county'])
-        elif 'province' in str(location_validated.raw['address']):
-            city = str(location_validated.raw['address']['province'])
-        else:
-            city = ''
-        state = str(
-            location_validated.raw['address']['state']) if 'state' in str(
-            location_validated.raw['address']) else ''
-        country = str(
-            location_validated.raw['address']['country']) if 'country' in str(
-            location_validated.raw['address']) else ''
-        if state == city:
-            frontend_location = ', '.join([city, country])
-        elif city == '':
-            frontend_location = ', '.join([state, country])
-        elif state == '':
-            frontend_location = ', '.join([city, country])
-        else:
-            frontend_location = ', '.join([city, state, country])
+    if 'city' in str(location_validated.raw['address']):
+        city = str(location_validated.raw['address']['city'])
+    elif 'town' in str(location_validated.raw['address']):
+        city = str(location_validated.raw['address']['town'])
+    elif 'village' in str(location_validated.raw['address']):
+        city = str(location_validated.raw['address']['village'])
+    elif 'county' in str(location_validated.raw['address']):
+        city = str(location_validated.raw['address']['county'])
+    elif 'province' in str(location_validated.raw['address']):
+        city = str(location_validated.raw['address']['province'])
+    else:
+        city = ''
+    state = str(
+        location_validated.raw['address']['state']) if 'state' in str(
+        location_validated.raw['address']) else ''
+    country = str(
+        location_validated.raw['address']['country']) if 'country' in str(
+        location_validated.raw['address']) else ''
+    if state == city:
+        frontend_location = ', '.join([city, country])
+    elif city == '':
+        frontend_location = ', '.join([state, country])
+    elif state == '':
+        frontend_location = ', '.join([city, country])
+    elif state == '' and city == '':
+        frontend_location = country
+    else:
+        frontend_location = ', '.join([city, state, country])
 
+    url = (
+        f'https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{frontend_location}'
+        f'/next24hours?unitGroup=metric&elements=datetimeEpoch%2Clatitude%2Clongitude%2C'
+        f'tempmax%2Ctempmin%2Ctemp%2Cfeelslikemax%2Cfeelslikemin%2Cfeelslike%2Chumidity%2Cprecip%2Cpreciptype%2C'
+        f'snow%2Cpressure%2Ccloudcover%2Cuvindex%2Csunrise%2Csunset%2Cmoonphase%2Cconditions%2Cdescription%2Cicon'
+        f'&iconSet=icons2&key={API_KEY}&contentType=json')
+    
+    weather_data = requests.get(url).json()
+    cc = weather_data['currentConditions']
 
-        try:
-            exists = Location.objects.filter(loc=frontend_location, author=request.user).first()
-            time_from_request = datetime.datetime.fromtimestamp(exists.datetimeEpoch).timestamp()
-            now = datetime.datetime.now().timestamp()
-            if (now - time_from_request)/60 < 30:
-                messages.warning(request, f'Please wait {round(30 - ((now - time_from_request)/60))} minutes before updating.')
-                return HttpResponseClientRefresh()
-            if exists:
-                messages.warning(request, f'{frontend_location} is already on your dashboard!')
-                return HttpResponseClientRefresh()
-        except:
-            pass
+    if request.user.is_authenticated:
+        if Location.objects.filter(loc=frontend_location, author=request.user).exists():
+            response = HttpResponse(status=204)
+            response['HX-Trigger'] = json.dumps({'showMessage': [{"message": f'{frontend_location} is already on your dashboard.',
+            "color": "bg-danger-subtle", "title": "Error"}]})
+            return response
 
-        url = (
-            f'https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{frontend_location}'
-            f'/next24hours?unitGroup=metric&timezone=America/New_York&elements=datetime%2CdatetimeEpoch%2Clatitude%2Clongitude%2C'
-            f'tempmax%2Ctempmin%2Ctemp%2Cfeelslikemax%2Cfeelslikemin%2Cfeelslike%2Chumidity%2Cprecip%2Cpreciptype%2C'
-            f'snow%2Cpressure%2Ccloudcover%2Cuvindex%2Csunrise%2Csunset%2Cmoonphase%2Cconditions%2Cdescription%2Cicon'
-            f'&iconSet=icons2&key={API_KEY}&contentType=json')
-
-        weather_data = requests.get(url).json()
-        cc = weather_data['currentConditions']
-        form_data = {'loc': frontend_location, 'datetime': cc['datetime'],
-        'datetimeEpoch': cc['datetimeEpoch'], 'temp': cc['temp'], 'feelslike': cc['feelslike'],
+        form_data = {'loc': frontend_location, 'datetimeEpoch': datetime.datetime.fromtimestamp(cc['datetimeEpoch'], tz=timezone.utc),
+        'temp': cc['temp'], 'feelslike': cc['feelslike'],
         'humidity': cc['humidity'], 'precip': cc['precip'], 'snow': cc['snow'],
         'preciptype': cc['preciptype'], 'pressure': cc['pressure'], 'cloudcover': cc['cloudcover'],
         'uvindex': cc['uvindex'], 'conditions': cc['conditions'], 'icon': cc['icon'], 
-        'sunrise': cc['sunrise'], 'sunset': cc['sunset'], 'moonphase': cc['moonphase'], 
-        'daily_description': weather_data['description'], 'order': max_order_num, 'author': request.user}
+        'sunrise': datetime.datetime.strftime(datetime.datetime.fromtimestamp(cc['datetimeEpoch'], tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ").split('T')[0] + 'T' + cc['sunrise'],
+        'sunset': datetime.datetime.strftime(datetime.datetime.fromtimestamp(cc['datetimeEpoch'], tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ").split('T')[0] + 'T' + cc['sunset'],
+        'moonphase': cc['moonphase'], 
+        'daily_description': weather_data['description'], 'order': max_order_num, 'author': request.user,
+        'session': request.session.session_key, 'tz_display_dt': datetime.datetime.strftime(datetime.datetime.fromtimestamp(cc['datetimeEpoch'], tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"),
+        'tz_display_lm': datetime.datetime.strftime(datetime.datetime.now(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"),
+        'pretty_loc': re.sub("[, ]", '_', frontend_location)}
         form = LocationForm(form_data)
-        print(form.errors)
         if form.is_valid():
             form.save()
-            messages.success(request, f'{frontend_location} successfully saved!')
-            return HttpResponseClientRefresh()
 
-        user_prefs, created = UserPreferences.objects.get_or_create(author=request.user,
-        defaults={'units': 'us', 'timezone': 'America/New_York', 'author': request.user})
+        user_prefs, _ = UserPreferences.objects.get_or_create(author=request.user,
+        defaults={'units': 'us', 'author': request.user, 'session': request.session.session_key})
         units = user_prefs.units
-        timezone = user_prefs.timezone
-        all_timezones = {'America/New_York': 'America/New_York', 'America/Los_Angeles': 'America/Los_Angeles'}
-        popped = all_timezones.pop(timezone)
-        locations = list(Location.objects.filter(author=request.user).all().values())
-        cards = {}
-        for loc in locations:
-                    cards[loc['loc']] = {'datetime': loc['datetime'],
-                    'temp': loc['temp'], 'feelslike': loc['feelslike'],
-                    'humidity': loc['humidity'], 'precip': loc['precip'], 'snow': loc['snow'],
-                    'preciptype': loc['preciptype'], 'pressure': loc['pressure'], 'cloudcover': loc['cloudcover'],
-                    'uvindex': loc['uvindex'], 'conditions': loc['conditions'], 'icon': loc['icon'], 
-                    'sunrise': loc['sunrise'], 'sunset': loc['sunset'], 'moonphase': loc['moonphase'], 
-                    'daily_description': loc['daily_description']}
-        context = {'saved_locs': cards}
-        
-        
-        if units == 'metric':
-            front_units = {'temp_unit': '°C', 'precip_unit': 'mm', 'snow_unit': 'cm',
-                        'wind_unit': 'km/h', 'visibility_unit': 'km', 'pressure_unit': 'mb'}
-            for loc in locations:
-                cards[loc['loc']] = {'datetime': loc['datetime'],
-                'temp': loc['temp'], 'feelslike': loc['feelslike'],
-                'humidity': loc['humidity'], 'precip': loc['precip'], 'snow': loc['snow'],
-                'preciptype': loc['preciptype'], 'pressure': loc['pressure'], 'cloudcover': loc['cloudcover'],
-                'uvindex': loc['uvindex'], 'conditions': loc['conditions'], 'icon': loc['icon'], 
-                'sunrise': loc['sunrise'], 'sunset': loc['sunset'], 'moonphase': loc['moonphase'], 
-                'daily_description': loc['daily_description']}
-        elif units == 'uk':
-            front_units = {'temp_unit': '°C', 'precip_unit': 'mm', 'snow_unit': 'cm',
-                        'wind_unit': 'mph', 'visibility_unit': 'miles', 'pressure_unit': 'mb'}
-            for loc in locations:
-                cards[loc['loc']] = {'datetime': loc['datetime'],
-                'temp': loc['temp'], 'feelslike': loc['feelslike'],
-                'humidity': loc['humidity'], 'precip': loc['precip'], 'snow': loc['snow'],
-                'preciptype': loc['preciptype'], 'pressure': loc['pressure'], 'cloudcover': loc['cloudcover'],
-                'uvindex': loc['uvindex'], 'conditions': loc['conditions'], 'icon': loc['icon'], 
-                'sunrise': loc['sunrise'], 'sunset': loc['sunset'], 'moonphase': loc['moonphase'], 
-                'daily_description': loc['daily_description']}
-        elif units == 'us':
-            front_units = {'temp_unit': '°F', 'precip_unit': 'in', 'snow_unit': 'in',
-                        'wind_unit': 'mph', 'visibility_unit': 'miles', 'pressure_unit': 'mb'}
-            for loc in locations:
-                    cards[loc['loc']] = {'datetime': loc['datetime'],
-                    'temp': round((float(loc['temp'])*1.8)+32, 1), 'feelslike': round((float(loc['feelslike'])*1.8)+32, 1),
-                    'humidity': loc['humidity'], 'precip': round(float(loc['precip'])*25.4, 1), 'snow': round(float(loc['snow'])*2.54, 1),
-                    'preciptype': loc['preciptype'], 'pressure': loc['pressure'], 'cloudcover': loc['cloudcover'],
-                    'uvindex': loc['uvindex'], 'conditions': loc['conditions'], 'icon': loc['icon'], 
-                    'sunrise': loc['sunrise'], 'sunset': loc['sunset'], 'moonphase': loc['moonphase'], 
-                    'daily_description': loc['daily_description']}
-        return render(request, 'fetch_weather/partials/add_card.html', context)
 
-    context = {'saved_locs': cards, 'front_units': front_units, 'all_timezones': all_timezones, 'popped': popped}
+        new_loc = Location.objects.filter(author=request.user).get(loc=frontend_location)     
     
+    else:
+        if Location.objects.filter(loc=frontend_location, session=request.session.session_key).exists():
+            response = HttpResponse(status=204)
+            response['HX-Trigger'] = json.dumps({'showMessage': [{"message": f'{frontend_location} is already on your dashboard.',
+            "color": "bg-danger-subtle", "title": "Error"}]})
+            return response
+        
+        form_data = {'loc': frontend_location, 'datetimeEpoch': datetime.datetime.fromtimestamp(cc['datetimeEpoch'], tz=timezone.utc),
+        'temp': cc['temp'], 'feelslike': cc['feelslike'],
+        'humidity': cc['humidity'], 'precip': cc['precip'], 'snow': cc['snow'],
+        'preciptype': cc['preciptype'], 'pressure': cc['pressure'], 'cloudcover': cc['cloudcover'],
+        'uvindex': cc['uvindex'], 'conditions': cc['conditions'], 'icon': cc['icon'], 
+        'sunrise': datetime.datetime.strftime(datetime.datetime.fromtimestamp(cc['datetimeEpoch'], tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ").split('T')[0] + 'T' + cc['sunrise'],
+        'sunset': datetime.datetime.strftime(datetime.datetime.fromtimestamp(cc['datetimeEpoch'], tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ").split('T')[0] + 'T' + cc['sunset'],
+        'moonphase': cc['moonphase'], 
+        'daily_description': weather_data['description'], 'order': max_order_num, 'author': None,
+        'session': request.session.session_key, 'tz_display_dt': datetime.datetime.strftime(datetime.datetime.fromtimestamp(cc['datetimeEpoch'], tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"),
+        'tz_display_lm': datetime.datetime.strftime(datetime.datetime.now(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"),
+        'pretty_loc': re.sub("[, ]", '_', frontend_location)}
+        form = LocationForm(form_data)
+        if form.is_valid():
+            form.save()
+
+        user_prefs, _ = UserPreferences.objects.get_or_create(session=request.session.session_key,
+        defaults={'units': 'us', 'author': None, 'session': request.session.session_key})
+        units = user_prefs.units
+        request.session['units'] = user_prefs.units
+
+        new_loc = Location.objects.filter(session=request.session.session_key).get(loc=frontend_location)     
+        
+    if units == 'metric':
+        front_units = METRIC_UNITS
+    elif units == 'uk':
+        front_units = UK_UNITS
+    elif units == 'us':
+        front_units = US_UNITS
+        new_loc.temp = round((float(new_loc.temp)*1.8)+32, 1)
+        new_loc.feelslike = round((float(new_loc.feelslike)*1.8)+32, 1)
+        new_loc.precip = round(float(new_loc.precip)*25.4, 1)
+        new_loc.snow = round(float(new_loc.snow)*2.54, 1)
+        
+    context = {'new_card': new_loc, 'front_units': front_units}
+        
+
+    response = render(request, 'fetch_weather/partials/add_card.html', context)
+    response['HX-Trigger'] = json.dumps({'showMessage': [{"message": f'{new_loc.loc} has been added to your dashboard.',
+    "color": "bg-success-subtle", "title": "Added Location"}]})
+    return response
         
     #eturn render(request, 'fetch_weather/home.html', context)
 
 def remove_card(request):
+    loc = request.POST
+    new_loc = []
+    for item in loc:
+        new_loc.append(item)
+    loc = ', '.join(new_loc)
     if request.user.is_authenticated:
-        loc = request.POST
-        new_loc = []
-        for item in loc:
-            new_loc.append(item)
-        loc = ', '.join(new_loc)
         x = Location.objects.filter(author=request.user).get(loc=loc)
-        x.delete()
-        messages.success(request, f'Successfully deleted {x.loc}!')
+    else:
+        x = Location.objects.filter(session=request.session.session_key).get(loc=loc)
+    x.delete()
+    context = {}
+    response = render(request, 'fetch_weather/partials/remove_card.html', context)
+    response['HX-Trigger'] = json.dumps({'showMessage': [{"message": f'{loc} has been removed from your dashboard.',
+    "color": "bg-warning-subtle", "title": "Removed Location"}]})
+    return response
+    
+def update_card(request):
+    loc = request.POST
+    new_loc = []
+    for item in loc:
+        new_loc.append(item)
+    loc = ', '.join(new_loc)
+    if request.user.is_authenticated:
+        x = Location.objects.filter(author=request.user).get(loc=loc)
+    else:
+        x = Location.objects.filter(session=request.session.session_key).get(loc=loc)
+    now = datetime.datetime.now(tz=timezone.utc)
+
+    if (now - x.last_modified).seconds < 10:
+        response = HttpResponse(status=204)
+        response['HX-Trigger'] = json.dumps({'showMessage': [{"message": f'Please wait {round(30 - ((now-x.last_modified).seconds)/60)} minutes before manually refreshing {x.loc}.',
+        "color": "bg-danger-subtle", "title": "Error"}]})
+        return response
+    
+    url = (
+        f'https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{x.loc}'
+        f'/next24hours?unitGroup=metric&elements=datetime%2CdatetimeEpoch%2Clatitude%2Clongitude%2C'
+        f'tempmax%2Ctempmin%2Ctemp%2Cfeelslikemax%2Cfeelslikemin%2Cfeelslike%2Chumidity%2Cprecip%2Cpreciptype%2C'
+        f'snow%2Cpressure%2Ccloudcover%2Cuvindex%2Csunrise%2Csunset%2Cmoonphase%2Cconditions%2Cdescription%2Cicon'
+        f'&iconSet=icons2&key={API_KEY}&contentType=json')
+    weather_data = requests.get(url).json()
+    cc = weather_data['currentConditions']
+    x.datetimeEpoch = datetime.datetime.fromtimestamp(cc['datetimeEpoch'], tz=timezone.utc)
+    x.temp = cc['temp']
+    x.feelslike = cc['feelslike']
+    x.humidity = cc['humidity']
+    x.precip = cc['precip']
+    x.snow = cc['snow']
+    x.preciptype = cc['preciptype']
+    x.pressure = cc['pressure']
+    x.cloudcover = cc['cloudcover']
+    x.uvindex = cc['uvindex']
+    x.conditions = cc['conditions']
+    x.icon = cc['icon']
+    x.sunrise = datetime.datetime.strftime(datetime.datetime.fromtimestamp(cc['datetimeEpoch'], tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ").split('T')[0] + 'T' + cc['sunrise']
+    x.sunset = datetime.datetime.strftime(datetime.datetime.fromtimestamp(cc['datetimeEpoch'], tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ").split('T')[0] + 'T' + cc['sunset']
+    x.moonphase = cc['moonphase']
+    x.daily_description = weather_data['description']
+    x.last_modified = datetime.datetime.now(tz=timezone.utc)
+    x.tz_display_lm = datetime.datetime.strftime(datetime.datetime.now(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ")
+    x.tz_display_dt = datetime.datetime.strftime(datetime.datetime.fromtimestamp(cc['datetimeEpoch'], tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ")
+    x.save(update_fields=['datetimeEpoch', 'temp', 'feelslike', 'humidity',
+    'precip', 'snow', 'preciptype', 'pressure', 'cloudcover', 'uvindex', 'conditions',
+    'icon', 'sunrise', 'sunset', 'moonphase', 'daily_description', 'last_modified',
+    'tz_display_lm', 'tz_display_dt'])
+    #for x in range(len(weather_data['days'][0]['hours'])):
+        #print(datetime.datetime.fromtimestamp(weather_data['days'][1]['hours'][x]['datetimeEpoch']))
+    json_ob = json.dumps(weather_data, indent=4)
+    with open('sample.json', 'w') as outfile:
+        outfile.write(json_ob)
+
+    if request.user.is_authenticated:
+        x = Location.objects.filter(author=request.user).get(loc=loc)
+        user_prefs, _ = UserPreferences.objects.get_or_create(author=request.user,
+            defaults={'units': 'us', 'author': request.user, 'session': request.session.session_key})
+    else:
+        x = Location.objects.filter(session=request.session.session_key).get(loc=loc)
+        user_prefs, _ = UserPreferences.objects.get_or_create(session=request.session.session_key,
+            defaults={'units': 'us', 'author': None, 'session': request.session.session_key})
+        
+    units = user_prefs.units
+
+    if units == 'metric':
+        front_units = METRIC_UNITS
+    elif units == 'uk':
+        front_units = UK_UNITS
+    elif units == 'us':
+        front_units = US_UNITS
+        x.temp = round((float(x.temp)*1.8)+32, 1)
+        x.feelslike = round((float(x.feelslike)*1.8)+32, 1)
+        x.precip = round(float(x.precip)*25.4, 1)
+        x.snow = round(float(x.snow)*2.54, 1)
+
+    context = {'new_card': x, 'front_units': front_units}
+
+    response = render(request, 'fetch_weather/partials/update_card.html', context)
+    response['HX-Trigger'] = json.dumps({'showMessage': [{"message": f'{x.loc} has been updated.',
+    "color": "bg-info-subtle", "title": "Updated Location"}]})
+    return response
+
 
 def sort(request):
     if request.user.is_authenticated:
         locations = list(Location.objects.filter(author=request.user).all().values())
-        card_order = dict(request.POST)
-        card_order = card_order['card-order']
-        user_prefs, created = UserPreferences.objects.get_or_create(author=request.user,
-        defaults={'units': 'us', 'timezone': 'America/New_York', 'author': request.user})
-        units = user_prefs.units
-        timezone = user_prefs.timezone
-        all_timezones = {'America/New_York': 'America/New_York', 'America/Los_Angeles': 'America/Los_Angeles'}
-        popped = all_timezones.pop(timezone)
+        user_prefs, _ = UserPreferences.objects.get_or_create(author=request.user,
+            defaults={'units': 'us', 'author': request.user, 'session': request.session.session_key})
+    else:
+        locations = list(Location.objects.filter(session=request.session.session_key).all().values())
+        user_prefs, _ = UserPreferences.objects.get_or_create(session=request.session.session_key,
+            defaults={'units': 'us', 'author': None, 'session': request.session.session_key})
+    card_order = dict(request.POST)
+    card_order = card_order['card-order']
+    units = user_prefs.units
 
-        sorted_cards = {}
-        cards = {}
-        if units == 'metric' or units == 'uk':
-            for loc in locations:
-                cards[loc['loc']] = {'datetime': loc['datetime'],
-                'temp': loc['temp'], 'feelslike': loc['feelslike'],
-                'humidity': loc['humidity'], 'precip': loc['precip'], 'snow': loc['snow'],
-                'preciptype': loc['preciptype'], 'pressure': loc['pressure'], 'cloudcover': loc['cloudcover'],
-                'uvindex': loc['uvindex'], 'conditions': loc['conditions'], 'icon': loc['icon'], 
-                'sunrise': loc['sunrise'], 'sunset': loc['sunset'], 'moonphase': loc['moonphase'], 
-                'daily_description': loc['daily_description']}
-        elif units == 'us':
-            for loc in locations:
-                cards[loc['loc']] = {'datetime': loc['datetime'],
-                'temp': round((float(loc['temp'])*1.8)+32, 1), 'feelslike': round((float(loc['feelslike'])*1.8)+32, 1),
-                'humidity': loc['humidity'], 'precip': round(float(loc['precip'])*25.4, 1), 'snow': round(float(loc['snow'])*2.54, 1),
-                'preciptype': loc['preciptype'], 'pressure': loc['pressure'], 'cloudcover': loc['cloudcover'],
-                'uvindex': loc['uvindex'], 'conditions': loc['conditions'], 'icon': loc['icon'], 
-                'sunrise': loc['sunrise'], 'sunset': loc['sunset'], 'moonphase': loc['moonphase'], 
-                'daily_description': loc['daily_description']}
+    sorted_cards = {}
+    cards = {}
 
-        for count, sorted_loc in enumerate(card_order):
-            sorted_cards[sorted_loc] = cards[sorted_loc]
+    for loc in locations:
+        if units == 'us':
+            loc['temp'] = round((float(loc['temp'])*1.8)+32, 1)
+            loc['feelslike'] = round((float(loc['feelslike'])*1.8)+32, 1)
+            loc['precip'] = round(float(loc['precip'])*25.4, 1)
+            loc['snow'] = round(float(loc['snow'])*2.54, 1)
+        cards[loc['loc']] = loc
+
+    for count, sorted_loc in enumerate(card_order):
+        sorted_cards[sorted_loc] = cards[sorted_loc]
+        if request.user.is_authenticated:
             loc1 = Location.objects.get(author=request.user, loc=sorted_loc)
             loc1.order = count + 1
             loc1.save(update_fields=['order'])
+        else:
+            loc1 = Location.objects.get(session=request.session.session_key, loc=sorted_loc)
+            loc1.order = count + 1
+            loc1.save(update_fields=['order'])
 
-        if units == 'metric':
-            front_units = {'temp_unit': '°C', 'precip_unit': 'mm', 'snow_unit': 'cm',
-                        'wind_unit': 'km/h', 'visibility_unit': 'km', 'pressure_unit': 'mb'}
-        elif units == 'uk':
-            front_units = {'temp_unit': '°C', 'precip_unit': 'mm', 'snow_unit': 'cm',
-                        'wind_unit': 'mph', 'visibility_unit': 'miles', 'pressure_unit': 'mb'}
-        elif units == 'us':
-            front_units = {'temp_unit': '°F', 'precip_unit': 'in', 'snow_unit': 'in',
-                        'wind_unit': 'mph', 'visibility_unit': 'miles', 'pressure_unit': 'mb'}
+    if units == 'metric':
+        front_units = METRIC_UNITS
+    elif units == 'uk':
+        front_units = UK_UNITS
+    elif units == 'us':
+        front_units = US_UNITS
 
-        context = {'saved_locs': sorted_cards, 'front_units': front_units}
-        return render(request, 'fetch_weather/partials/sort.html', context)
+    context = {'saved_locs': sorted_cards, 'front_units': front_units}
+    return render(request, 'fetch_weather/partials/sort.html', context)
 
-
-def select_timezone(request):
-    context = {}
-    request_tz = request.GET.get('timezone')
-    if request.user.is_authenticated:
-        user_prefs, created = UserPreferences.objects.get_or_create(author=request.user,
-        defaults={'units': 'us', 'timezone': 'America/New_York', 'author': request.user})
-        locations = list(Location.objects.filter(author=request.user).all().values())
-        timezone = user_prefs.timezone
-        all_timezones = {'America/New_York': 'America/New_York', 'America/Los_Angeles': 'America/Los_Angeles'}
-        
-
-        user_prefs.timezone = request_tz if request_tz in all_timezones else user_prefs.timezone
-        user_prefs.save()
-
-        popped = all_timezones.pop(user_prefs.timezone)
-
-        context = {'all_timezones': all_timezones, 'popped': popped}
-
-    if request.htmx:
-        return render(request, 'fetch_weather/partials/timezone.html', context)
-    return render(request, 'fetch_weather/home.html', context)
 
 def about(request):
     return render(request, 'fetch_weather/about.html')
@@ -450,222 +457,3 @@ def about(request):
 def past(request):
     return render(request, 'fetch_weather/past.html')
 
-
-class Loc():
-    '''Cleans up the home function, all of the location processing is done in this class'''
-
-    def __init__(self, request, location, author):
-        self.request = request
-        self.location = location
-        self.author = author
-        geolocator = Nominatim(user_agent='http')
-        self.location = geolocator.geocode(self.location, addressdetails=True, language='en')
-        # TODO - add functionality for anonymous users.
-
-    def is_valid(self):
-        '''Uses Nominatim api, if the request returns none then we know the location is not a true input.'''
-        if self.location is None:
-            return False
-        else:
-            return True
-
-    def clean_location(self):
-        '''Returns the city, state, country where if the city, state, or province match then it will only return the city, country.
-           This is stored in the database and will be displayed on the user's page.'''
-        if 'city' in str(self.location.raw['address']):
-            city = str(self.location.raw['address']['city'])
-        elif 'town' in str(self.location.raw['address']):
-            city = str(self.location.raw['address']['town'])
-        elif 'village' in str(self.location.raw['address']):
-            city = str(self.location.raw['address']['village'])
-        else:
-            city = ''
-        state = str(self.location.raw['address']['state']) if 'state' in str(self.location.raw['address']) else 'no'
-        country = str(
-            self.location.raw['address']['country']) if 'country' in str(
-            self.location.raw['address']) else 'no'
-        if state == city:
-            self.location = ', '.join([city, country])
-        else:
-            self.location = ', '.join([city, state, country])
-        return self.location
-
-    def update_current_weather(self, request_unit):
-        '''Makes an api call to update the weather. Also formats the incoming data into the way an end user should see.'''
-        self.units = request_unit
-        timezone = 'America/New_York'
-        url = (
-            f'https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{self.location}'
-            f'/next24hours?unitGroup={units}&timezone={timezone}&elements=datetime%2CdatetimeEpoch%2Clatitude%2Clongitude%2C'
-            f'tempmax%2Ctempmin%2Ctemp%2Cfeelslikemax%2Cfeelslikemin%2Cfeelslike%2Chumidity%2Cprecip%2Cpreciptype%2C'
-            f'snow%2Cpressure%2Ccloudcover%2Cuvindex%2Csunrise%2Csunset%2Cmoonphase%2Cconditions%2Cdescription%2Cicon'
-            f'&iconSet=icons2&include=hours%2Ccurrent%2Cdays&key={API_KEY}&contentType=json')
-
-        if request_unit == 'metric':
-            units = {'temp_unit': '°C', 'precip_unit': 'mm', 'snow_unit': 'cm',
-                     'wind_unit': 'km/h', 'visibility_unit': 'km', 'pressure_unit': 'mb'}
-        elif request_unit == 'uk':
-            units = {'temp_unit': '°C', 'precip_unit': 'mm', 'snow_unit': 'cm',
-                     'wind_unit': 'mph', 'visibility_unit': 'miles', 'pressure_unit': 'mb'}
-        else:
-            units = {'temp_unit': '°F', 'precip_unit': 'in', 'snow_unit': 'in',
-                     'wind_unit': 'mph', 'visibility_unit': 'miles', 'pressure_unit': 'mb'}
-
-        location_api_data = requests.get(url).json()
-        current_conditions = location_api_data['currentConditions']
-
-        sunrise = current_conditions['sunrise'][:-3]
-        if int(sunrise[:2]) == 12:
-            sunrise = '12' + sunrise[2:] + ' PM'
-        elif int(sunrise[:2]) == 00:
-            sunrise = '12' + sunrise[2:] + ' AM'
-        elif int(sunrise[0]) == 0 and int(sunrise[:2]) != 00:
-            sunrise = sunrise[1:]
-            if int(sunrise[0]) < 12:
-                sunrise += ' AM'
-        elif int(sunrise[:2]) < 12:
-            sunrise += ' AM'
-        elif int(sunrise[:2]) > 12:
-            sunrise = str(int(sunrise[:2]) - 12) + sunrise[2:] + ' PM'
-
-        sunset = current_conditions['sunset'][:-3]
-        if int(sunset[:2]) == 12:
-            sunset = '12' + sunset[2:] + ' PM'
-        elif int(sunset[:2]) == 00:
-            sunset = '12' + sunset[2:] + ' AM'
-        elif int(sunset[0]) == 0 and int(sunset[:2]) != 00:
-            sunset = sunset[1:]
-            if int(sunset[0]) < 12:
-                sunset += ' AM'
-        elif int(sunset[:2]) < 12:
-            sunset += ' AM'
-        elif int(sunset[:2]) > 12:
-            sunset = str(int(sunset[:2]) - 12) + sunset[2:] + ' PM'
-
-        frontend_current_weather = {}
-        frontend_current_weather['Feels Like'] = str(current_conditions['feelslike']) + units['temp_unit']
-        frontend_current_weather['Precip'] = str(current_conditions['precip']) + units['precip_unit']
-        if current_conditions['preciptype'] is not None:
-            preciptypes = [x.capitalize() for x in current_conditions['preciptype']]
-            frontend_current_weather['Precip Type'] = ', '.join(preciptypes)
-        else:
-            frontend_current_weather['Precip type'] = 'None'
-        frontend_current_weather['Snow'] = str(current_conditions['snow']) + units['snow_unit']
-        frontend_current_weather['Humidity'] = str(current_conditions['humidity']) + '%'
-        frontend_current_weather['Cloud Cover'] = str(current_conditions['cloudcover']) + '%'
-        frontend_current_weather['UV Index'] = str(current_conditions['uvindex'])
-        frontend_current_weather['Pressure'] = str(current_conditions['pressure']) + units['pressure_unit']
-        frontend_current_weather['Sunrise'] = sunrise
-        frontend_current_weather['Sunset'] = sunset
-        return frontend_current_weather
-
-#     def convert_to_us(request):
-#         pass
-
-        #     if request.method == 'POST':
-        #     form = LocationForm(request.POST)
-        #     if form.is_valid():
-        #         location = request.POST.get('location')
-        #         units_type = request.POST.get('units')
-        #         timezone = request.POST.get('timezone')
-        #         if location == '':
-        #             messages.warning(request, 'Please input a location.')
-        #             return render(request, 'fetch_weather/home.html')
-
-        #         geolocator = Nominatim(user_agent='http')
-        #         try:
-        #             lat, lon = location.split(',')
-        #             if isinstance(lat, float) and isinstance(lon, float):
-        #                 location = geolocator.reverse((lat, lon))
-        #             else:
-        #                 location = geolocator.geocode(location, addressdetails=True, language='en')
-        #                 lat = str(round(location.latitude, 4))
-        #                 lon = str(round(location.longitude, 4))
-        #                 if 'city' in str(location.raw['address']):
-        #                     city = str(location.raw['address']['city'])
-        #                 elif 'town' in str(location.raw['address']):
-        #                     city = str(location.raw['address']['town'])
-        #                 elif 'village' in str(location.raw['address']):
-        #                     city = str(location.raw['address']['village'])
-        #                 else:
-        #                     city = ''
-        #                 state = str(location.raw['address']['state']) if 'state' in str(location.raw['address']) else ''
-        #                 country = str(location.raw['address']['country']) if 'country' in str(location.raw['address']) else ''
-        #         except:
-        #             messages.warning(request, 'Invalid location.')
-        #             return render(request, 'fetch_weather/home.html')
-
-        #         if state == city:
-        #             frontend_location = ', '.join([city, country])
-        #         else:
-        #             frontend_location = ', '.join([city, state, country])
-
-        #         url = f'https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{frontend_location}/next24hours?unitGroup={units_type}&timezone={timezone}&elements=datetime%2Clatitude%2Clongitude%2Ctempmax%2Ctempmin%2Ctemp%2Cfeelslikemax%2Cfeelslikemin%2Cfeelslike%2Chumidity%2Cprecip%2Cpreciptype%2Csnow%2Cpressure%2Ccloudcover%2Cuvindex%2Csunrise%2Csunset%2Cmoonphase%2Cconditions%2Cdescription%2Cicon&iconSet=icons2&include=hours%2Ccurrent%2Cdays&key={API_KEY}&contentType=json'
-
-        #         if request.user.is_authenticated:
-        #             temperature = 100
-
-        #         location_api_data = requests.get(url).json()
-        #         current_weather = location_api_data['currentConditions']
-        #         current_weather = {'datetime': '20:20:11', 'temp': 15.7, 'feelslike': 15.7, 'humidity': 35.8, 'precip': 0.0, 'preciptype': ['snow', 'rain', 'ice'], 'pressure': 1024.0, 'cloudcover': 0.0, 'uvindex': 0.0, 'conditions': 'Clear', 'icon': 'clear-day', 'sunrise': '13:55:07', 'sunset': '20:15:27', 'moonphase': 0.05, 'snow' : 0.5}
-        #         description = 'Cloudy skies throughout the day.'
-        #         description = current_weather['conditions']
-        #         icon = f'https://raw.githubusercontent.com/visualcrossing/WeatherIcons/main/SVG/1st%20Set%20-%20Color/{current_weather["icon"]}.svg'
-        #         if units_type == 'metric':
-        #             units = {'temp_unit' : '°C', 'precip_unit' : 'mm', 'snow_unit' : 'cm', 'wind_unit' : 'km/h', 'visibility_unit' : 'km', 'pressure_unit' : 'mb'}
-        #         elif units_type == 'uk':
-        #             units = {'temp_unit' : '°C', 'precip_unit' : 'mm', 'snow_unit' : 'cm', 'wind_unit' : 'mph', 'visibility_unit' : 'miles', 'pressure_unit' : 'mb'}
-        #         else:
-        #             units = {'temp_unit' : '°F', 'precip_unit' : 'in', 'snow_unit' : 'in', 'wind_unit' : 'mph', 'visibility_unit' : 'miles', 'pressure_unit' : 'mb'}
-
-        #         sunrise = current_weather['sunrise'][:-3]
-        #         if int(sunrise[:2]) == 12:
-        #             sunrise = '12' + sunrise[2:] + ' PM'
-        #         elif int(sunrise[:2]) == 00:
-        #             sunrise = '12' + sunrise[2:] + ' AM'
-        #         elif int(sunrise[0]) == 0 and int(sunrise[:2]) != 00:
-        #             sunrise = sunrise[1:]
-        #             if int(sunrise[0]) < 12:
-        #                 sunrise += ' AM'
-        #         elif int(sunrise[:2]) < 12:
-        #             sunrise += ' AM'
-        #         elif int(sunrise[:2]) > 12:
-        #             sunrise = str(int(sunrise[:2]) - 12) + sunrise[2:] + ' PM'
-
-        #         sunset = current_weather['sunset'][:-3]
-        #         if int(sunset[:2]) == 12:
-        #             sunset = '12' + sunset[2:] + ' PM'
-        #         elif int(sunset[:2]) == 00:
-        #             sunset = '12' + sunset[2:] + ' AM'
-        #         elif int(sunset[0]) == 0 and int(sunset[:2]) != 00:
-        #             sunset = sunset[1:]
-        #             if int(sunset[0]) < 12:
-        #                 sunset += ' AM'
-        #         elif int(sunset[:2]) < 12:
-        #             sunset += ' AM'
-        #         elif int(sunset[:2]) > 12:
-        #             sunset = str(int(sunset[:2]) - 12) + sunset[2:] + ' PM'
-
-        #         frontend_current_weather = {}
-        #         frontend_current_weather['Feels Like'] = str(current_weather['feelslike']) + units['temp_unit']
-        #         frontend_current_weather['Precip'] = str(current_weather['precip']) + units['precip_unit']
-        #         if current_weather['preciptype'] is not None:
-        #             preciptypes = [x.capitalize() for x in current_weather['preciptype']]
-        #             frontend_current_weather['Precip Type'] = ', '.join(preciptypes)
-        #         else:
-        #             frontend_current_weather['Precip type'] = 'None'
-        #         frontend_current_weather['Snow'] = str(current_weather['snow']) + units['snow_unit']
-        #         frontend_current_weather['Humidity'] = str(current_weather['humidity']) + '%'
-        #         frontend_current_weather['Cloud Cover'] = str(current_weather['cloudcover']) + '%'
-        #         frontend_current_weather['UV Index'] = str(current_weather['uvindex'])
-        #         frontend_current_weather['Pressure'] = str(current_weather['pressure']) + units['pressure_unit']
-        #         frontend_current_weather['Sunrise'] = sunrise
-        #         frontend_current_weather['Sunset'] = sunset
-
-        #         location_current_weather_data = {'current_conditions': frontend_current_weather, 'location': frontend_location, 'units': units, 'description':description, 'icon' : icon, 'temp' : current_weather['temp'], 'conditions' : current_weather['conditions']}
-        #         request.user.location_set.create(loc=frontend_location, units=units, timezone=timezone)
-        #     else:
-        #         location_current_weather_data = {}
-        # else:
-        #     location_current_weather_data = {}
-        # context = {'location_current_weather_data' : location_current_weather_data}

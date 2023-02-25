@@ -1,0 +1,70 @@
+<img src=https://raw.githubusercontent.com/visualcrossing/WeatherIcons/main/SVG/1st%20Set%20-%20Color/{{ new_card.icon }}.svg class="card-img mx-auto" id="icon_{{ new_card.pretty_loc }}" hx-swap-oob="true" style="margin-bottom: 5px; aspect-ratio: 1;"/>
+
+<h5 class="card-subtitle mb-2 text-muted ms-2" id="{{new_card.pretty_loc}}_fronttemp" hx-swap-oob="true">{{ new_card.temp }}{{ front_units.temp_unit }}</h5>
+
+<h5 class="card-subtitle mb-2 text-muted me-1" id="{{new_card.pretty_loc}}_conditions" hx-swap-oob="true">{{ new_card.conditions }}</h5>
+
+<div class="col-12 ms-2 me-1" id="{{new_card.pretty_loc}}_description" hx-swap-oob="true">
+    {{ new_card.daily_description }}
+</div>
+
+<table class="table table-sm table-hover" id="{{new_card.pretty_loc}}_table" hx-swap-oob="true">
+    <tr>
+        <th scope="row">Data From</th>
+        <td class="text-end" id="{{new_card.pretty_loc}}_datetime"><script>
+            var new_date = new Date("{{ new_card.tz_display_dt }}")
+            document.querySelector("#{{new_card.pretty_loc}}_datetime").textContent = new_date.toLocaleString(undefined, {dateStyle: "medium", timeStyle: "short"})
+        </script></td>
+    </tr>
+    <tr>
+        <th scope="row">Feels Like</th>
+        <td class="text-end">{{new_card.feelslike}}{{front_units.temp_unit}}</td>
+    </tr>
+    <tr>
+        <th scope="row">Humidity</th>
+        <td class="text-end">{{new_card.humidity}}%</td>
+    </tr>
+    <tr>
+        <th scope="row">Precipitation Amount</th>
+        <td class="text-end">{{new_card.precip}} {{front_units.precip_unit}}</td>
+    </tr>
+    <tr>
+        <th scope="row">Snow</th>
+        <td class="text-end">{{new_card.snow}} {{front_units.snow_unit}}</td>
+    </tr>
+    <tr>
+        <th scope="row">Pressure</th>
+        <td class="text-end">{{new_card.pressure}} {{front_units.pressure_unit}}</td>
+    </tr>
+    <tr>
+        <th scope="row">Cloud Cover</th>
+        <td class="text-end">{{new_card.cloudcover}}%</td>
+    </tr>
+    <tr>
+        <th scope="row">UV Index</th>
+        <td class="text-end">{{new_card.uvindex}}</td>
+    </tr>
+    <tr>
+        <th scope="row">Sunrise</th>
+        <td class="text-end" id="{{new_card.pretty_loc}}_sunrise"><script>
+            var new_date = new Date("{{ new_card.sunrise }}")
+            document.querySelector("#{{new_card.pretty_loc}}_sunrise").textContent = new_date.toLocaleTimeString(undefined, {timeStyle: "short"})
+        </script></td>
+    </tr>
+    <tr>
+        <th scope="row">Sunset</th>
+        <td class="text-end" id="{{new_card.pretty_loc}}_sunset"><script>
+            var new_date = new Date("{{ new_card.sunset }}")
+            document.querySelector("#{{new_card.pretty_loc}}_sunset").textContent = new_date.toLocaleTimeString(undefined, {timeStyle: "short"})
+        </script></td>
+    </tr>
+</table>
+
+<small class="text-muted" id="{{new_card.pretty_loc}}_last_updated" hx-swap-oob="true"><script>
+    var new_date = new Date("{{ new_card.tz_display_lm }}")
+    document.querySelector("#{{new_card.pretty_loc}}_last_updated").textContent = "Last updated " + new_date.toLocaleString(undefined, {dateStyle: "medium", timeStyle: "short"})
+</script></small>
+<svg xmlns="http://www.w3.org/2000/svg" id="update_btn" hx-post="update_card/" hx-swap="none" hx-params="{{ new_card.loc }}" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" data-bs-toggle="tooltip" data-bs-title="Update" viewBox="0 0 16 16">
+    <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+    <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+    </svg>

@@ -12,7 +12,6 @@ class UserRegisterForm(UserCreationForm):
 
 class UserPreferencesForm(forms.ModelForm):
     units = forms.CharField(max_length=6)
-    timezone = forms.CharField(max_length=32)
 
     class Meta:
         model = User

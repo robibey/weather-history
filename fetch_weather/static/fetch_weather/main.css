@@ -84,7 +84,7 @@ body {
   }
 
   .fade-out {
-  transition: all 2s;
+  transition: opacity 2s;
   opacity: 0;
   transition-timing-function: ease-in-out;
   transition-duration: 2s;
@@ -92,4 +92,19 @@ body {
 
 .bi {
   cursor: pointer
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(200%);
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.slide-in {
+  animation: slide-in 1s linear forwards;
 }
